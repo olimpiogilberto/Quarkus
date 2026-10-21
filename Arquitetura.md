@@ -1,362 +1,82 @@
-# Gestão de Empresas e Trabalhadores
+# Arquitetura — Gestão de Empresas e Trabalhadores
 
 ## Visão geral
 
-Este projeto é uma API REST de estudo para gestão de empresas, pessoas, vínculos empregatícios, endereços, salários e faturamento anual. Esta versão do projeto utiliza **Java 17**, **Quarkus 3.40.1.1**, **Quarkus REST (Jakarta REST)**, **ArC (CDI)** e **Maven 3.9.6**.
+API REST implementada com Java 17 e Quarkus 3.40.1.1. O sistema oferece cadastro de empresas, pessoas, endereços, vínculos empregatícios e faturamento anual, com validações de domínio, consultas e testes de integração.
+O endpoint demonstrativo `GET /hello` do template Quarkus também foi mantido.
 
-O objetivo é manter o domínio do projeto original, mas desenvolver a aplicação com a stack Quarkus, praticando APIs REST, injeção de dependências, regras de negócio, validação, persistência e testes automatizados.
+## Stack
 
-## Stack principal
+- Quarkus REST e `quarkus-rest-jackson` para HTTP/JSON;
+- ArC/CDI para injeção de dependências;
+- Hibernate ORM with Panache para persistência;
+- H2 em memória no perfil padrão;
+- Hibernate Validator para validação;
+- SmallRye OpenAPI para OpenAPI e Swagger UI;
+- JUnit 5, Quarkus Test e REST Assured para testes.
 
-- Java 17
-- Quarkus 3.40.1.1
-- Quarkus REST / Jakarta REST
-- ArC / CDI
-- Maven 3.9.6
-- JUnit 5
-- Quarkus JUnit
-- REST Assured
-
-> A versão 3.40 do Quarkus é uma linha LTS. O README fixa especificamente a versão 3.40.1.1 para este projeto.
-
-## Funcionalidades planejadas
-
-- cadastrar empresas com CNPJ, razão social e situação cadastral;
-- cadastrar pessoas com CPF, nome, data de nascimento e situação;
-- associar pessoas e empresas por vínculos empregatícios;
-- registrar cargo, salário, datas e status do vínculo;
-- manter endereços de pessoas e empresas;
-- consultar empresa e salário pelo CPF;
-- consultar a quantidade de empregados por CNPJ;
-- registrar e consultar faturamento anual;
-- padronizar validações e respostas de erro;
-- manter testes automatizados dos recursos REST.
-
-## Arquitetura
-
-A organização sugerida é orientada à aplicação Quarkus:
+## Organização do código
 
 ```text
-src/
-├── main/
-│   ├── java/br/com/giba/cadmembros/
-│   │   ├── resource/       # Recursos Jakarta REST
-│   │   ├── service/        # Regras de negócio e beans CDI
-│   │   ├── repository/     # Persistência
-│   │   ├── model/          # Entidades/modelos
-│   │   ├── dto/            # Contratos de entrada e saída
-│   │   ├── exception/      # Exceções e ExceptionMappers
-│   │   └── validation/     # Validações específicas do domínio
-│   └── resources/
-│       └── application.properties
-└── test/
-    └── java/br/com/giba/cadmembros/
-        └── ...             # Testes com Quarkus JUnit e REST Assured
+src/main/java/org/acme/
+├── dto/          # contratos de entrada e resposta
+├── exception/    # exceções de API e mapeadores HTTP
+├── model/        # entidades JPA e enums
+├── repository/   # consultas Panache
+├── resource/     # recursos Jakarta REST
+├── service/      # regras de negócio e transações
+└── validation/   # validação de CPF e CNPJ
+src/main/resources/application.properties
+src/test/java/org/acme/
 ```
 
-### REST e injeção de dependências
+Os recursos REST recebem DTOs validados, delegam regras e persistência aos serviços e retornam DTOs de resposta. As entidades não são expostas diretamente pela API. Os relacionamentos de endereço são opcionais e exclusivos para uma empresa ou pessoa. Um vínculo referencia uma pessoa e uma empresa; um faturamento anual referencia uma empresa.
 
-Os endpoints devem ser implementados como recursos Jakarta REST, por exemplo com `@Path`, `@GET`, `@POST`, `@PUT`, `@DELETE`, `@Consumes` e `@Produces`.
+## Persistência e configuração
 
-As dependências entre resources, services e demais componentes devem utilizar CDI/ArC, preferencialmente por injeção de construtor quando adequada ou `@Inject` quando necessário.
+O datasource padrão usa H2 em memória (`jdbc:h2:mem:gestao`). O esquema é recriado ao iniciar a aplicação, adequado para desenvolvimento e testes, mas não para persistência em produção. O `application.properties` contém a configuração do banco e a inclusão da Swagger UI. Migrações versionadas, banco externo e perfil de produção ainda não estão configurados.
 
-## Requisitos
+## Recursos REST
 
-Antes de executar o projeto:
+Os caminhos e exemplos completos de payload estão no [README](README.md). A API inclui:
 
-- JDK 17
-- Maven 3.9.6
-- Git
-- IDE de sua preferência, como IntelliJ IDEA, VS Code ou Eclipse
+- CRUD de empresas e pessoas, incluindo atualização e remoção de endereço;
+- CRUD de vínculos empregatícios;
+- CRUD/listagem de faturamentos por empresa;
+- consultas de empresa por CPF, contagem de vínculos ativos, salário atual e faturamento por ano.
 
-Verifique o ambiente:
+CPF/CNPJ são normalizados para dígitos antes da persistência. CNPJ em segmento de caminho deve ser informado sem pontuação. As listagens retornam arrays sem paginação.
 
-```bash
-java -version
-mvn -v
-```
+## Regras de domínio
 
-## Dependências essenciais
+- CPF e CNPJ devem passar pela validação de dígitos verificadores e ser únicos.
+- Empresa e pessoa devem existir antes da criação de vínculo.
+- Uma pessoa pode ter no máximo um vínculo ativo.
+- Vínculo ativo não possui data final; vínculo encerrado exige data final. Datas não podem estar no futuro nem ser inconsistentes.
+- Salário e faturamento não podem ser negativos.
+- Há no máximo um faturamento por empresa e ano.
+- Exclusões de pessoa/empresa são recusadas quando existem vínculos ou faturamentos relacionados.
 
-No `pom.xml`, o projeto deve importar o BOM da plataforma Quarkus na versão `3.40.1.1` e incluir, no mínimo, as extensões necessárias para REST e testes. Exemplo conceitual:
+## Erros HTTP
 
-```xml
-<properties>
-    <maven.compiler.release>17</maven.compiler.release>
-    <quarkus.platform.version>3.40.1.1</quarkus.platform.version>
-</properties>
+Erros de validação são retornados como JSON com `timestamp`, `status`, `error` e `message`:
 
-<dependencies>
-    <dependency>
-        <groupId>io.quarkus</groupId>
-        <artifactId>quarkus-rest</artifactId>
-    </dependency>
+- `400 Bad Request`: entrada inválida ou regra de domínio violada;
+- `404 Not Found`: entidade/consulta não encontrada;
+- `409 Conflict`: CPF/CNPJ duplicado, vínculo ativo duplicado, faturamento repetido ou exclusão bloqueada por relacionamentos.
 
-    <dependency>
-        <groupId>io.quarkus</groupId>
-        <artifactId>quarkus-arc</artifactId>
-    </dependency>
-
-    <dependency>
-        <groupId>io.quarkus</groupId>
-        <artifactId>quarkus-junit5</artifactId>
-        <scope>test</scope>
-    </dependency>
-
-    <dependency>
-        <groupId>io.rest-assured</groupId>
-        <artifactId>rest-assured</artifactId>
-        <scope>test</scope>
-    </dependency>
-</dependencies>
-```
-
-Dependências de persistência, validação, banco de dados e OpenAPI devem ser adicionadas conforme esses módulos forem implementados. Elas não são pressupostas neste README apenas por existirem na antiga versão Spring.
-
-## Como executar
-
-### Modo de desenvolvimento
-
-```bash
-./mvnw quarkus:dev
-```
+## Desenvolvimento e testes
 
 No Windows:
 
 ```powershell
 .\mvnw.cmd quarkus:dev
-```
-
-Por padrão, a aplicação Quarkus fica disponível em:
-
-```text
-http://localhost:8080
-```
-
-## Build
-
-```bash
-./mvnw clean package
-```
-
-No Windows:
-
-```powershell
-.\mvnw.cmd clean package
-```
-
-## Testes
-
-Os testes da API devem utilizar:
-
-- **JUnit 5** como framework de testes;
-- **Quarkus JUnit**, com `@QuarkusTest`, para subir a aplicação durante os testes de integração;
-- **REST Assured** para realizar chamadas HTTP e validar status, headers e payloads.
-
-Exemplo:
-
-```java
-@QuarkusTest
-class EmpresaResourceTest {
-
-    @Test
-    void deveListarEmpresas() {
-        given()
-            .when().get("/api/empresas")
-            .then()
-            .statusCode(200);
-    }
-}
-```
-
-Execute a suíte com:
-
-```bash
-./mvnw test
-```
-
-ou, no Windows:
-
-```powershell
 .\mvnw.cmd test
+.\mvnw.cmd verify -DskipITs=false
 ```
 
-## Endpoints de domínio
+A API usa a porta 8080; OpenAPI e Swagger UI estão em `/q/openapi` e `/q/swagger-ui`. Os testes de recurso usam `@QuarkusTest` e REST Assured. Os testes de integração empacotados usam `@QuarkusIntegrationTest`.
 
-Os contratos abaixo representam o escopo funcional a ser preservado durante a migração para Jakarta REST.
+## Próximas evoluções
 
-### Empresas
-
-Base: `/api/empresas`
-
-- `POST /api/empresas`
-- `GET /api/empresas`
-- `GET /api/empresas/{id}`
-- `PUT /api/empresas/{id}`
-- `DELETE /api/empresas/{id}`
-- `PUT /api/empresas/{id}/endereco`
-- `DELETE /api/empresas/{id}/endereco`
-
-### Pessoas
-
-Base: `/api/pessoas`
-
-- `POST /api/pessoas`
-- `GET /api/pessoas`
-- `GET /api/pessoas/{id}`
-- `PUT /api/pessoas/{id}`
-- `DELETE /api/pessoas/{id}`
-- `PUT /api/pessoas/{id}/endereco`
-- `DELETE /api/pessoas/{id}/endereco`
-
-### Vínculos
-
-Base: `/api/vinculos`
-
-- `POST /api/vinculos`
-- `GET /api/vinculos`
-- `GET /api/vinculos/{id}`
-- `PUT /api/vinculos/{id}`
-- `DELETE /api/vinculos/{id}`
-
-### Consultas
-
-Base: `/api/consultas`
-
-- `GET /api/consultas/empresa-por-cpf/{cpf}`
-- `GET /api/consultas/empregados/{cnpj}/contagem`
-- `GET /api/consultas/salario/{cpf}`
-- `GET /api/consultas/faturamento/{cnpj}?ano={ano}`
-
-### Faturamento
-
-Base: `/api/empresas/{cnpj}/faturamentos`
-
-- `POST /api/empresas/{cnpj}/faturamentos`
-- `GET /api/empresas/{cnpj}/faturamentos`
-- `PUT /api/empresas/{cnpj}/faturamentos/registro/{id}`
-- `DELETE /api/empresas/{cnpj}/faturamentos/registro/{id}`
-
-## Exemplos de payload
-
-### Empresa
-
-```json
-{
-  "cnpj": "11.222.333/0001-81",
-  "razaoSocial": "Acme Ltda",
-  "situacao": "ATIVA",
-  "endereco": {
-    "logradouro": "Rua Um",
-    "cidade": "São Paulo",
-    "estado": "SP",
-    "cep": "01000-000"
-  }
-}
-```
-
-### Pessoa
-
-```json
-{
-  "cpf": "529.982.247-25",
-  "nome": "Ana Souza",
-  "dataNascimento": "1990-01-02",
-  "situacao": "ATIVA"
-}
-```
-
-### Vínculo
-
-```json
-{
-  "pessoaId": 1,
-  "empresaId": 1,
-  "cargo": "EMPREGADO",
-  "salario": 5250.50,
-  "dataInicio": "2023-01-01",
-  "status": "ATIVO"
-}
-```
-
-### Faturamento anual
-
-```json
-{
-  "ano": 2025,
-  "valor": 1200000.00
-}
-```
-
-## Regras de negócio principais
-
-### Empresa
-
-- CNPJ obrigatório, válido e único;
-- razão social obrigatória;
-- situação deve aceitar apenas valores definidos pelo domínio.
-
-### Pessoa
-
-- CPF obrigatório, válido e único;
-- nome obrigatório;
-- data de nascimento opcional e coerente;
-- situação deve aceitar apenas valores definidos pelo domínio.
-
-### Vínculo
-
-- pessoa e empresa devem existir;
-- vínculo pode possuir cargo, salário, status, data inicial e data final;
-- salário não pode ser negativo;
-- regras devem impedir estados de vínculo inconsistentes.
-
-### Faturamento
-
-- empresa deve existir;
-- ano e valor são obrigatórios;
-- valor não pode ser negativo;
-- deve existir no máximo um registro por empresa e ano.
-
-## Tratamento de erros
-
-A API deve usar respostas HTTP coerentes com Jakarta REST, por exemplo:
-
-- `400 Bad Request` para dados inválidos;
-- `404 Not Found` para recurso inexistente;
-- `409 Conflict` para conflitos de unicidade ou regras do domínio.
-
-No Quarkus/Jakarta REST, o tratamento centralizado pode ser implementado com `ExceptionMapper`.
-
-## Migração da versão Spring
-
-Ao portar a implementação anterior, substituir os conceitos específicos do Spring pelos equivalentes da nova stack:
-
-- Spring MVC Controllers → recursos **Jakarta REST**;
-- Spring DI (`@Autowired`, estereótipos Spring) → **CDI/ArC**;
-- `ResponseEntity` → `jakarta.ws.rs.core.Response` quando uma resposta explícita for necessária;
-- testes `@SpringBootTest`/MockMvc → **`@QuarkusTest` + REST Assured**;
-- `spring-boot:run` → **`quarkus:dev`**;
-- propriedades `spring.*` → propriedades `quarkus.*` correspondentes aos módulos efetivamente adotados.
-
-A camada de persistência deve ser migrada separadamente. Se o projeto continuar usando JPA/Hibernate e H2, adicione e configure as extensões Quarkus apropriadas antes de portar repositories e entidades.
-
-## Roadmap sugerido
-
-1. configurar Java 17, Maven 3.9.6 e Quarkus 3.40.1.1;
-2. criar os primeiros resources com Jakarta REST;
-3. organizar services como beans CDI/ArC;
-4. migrar DTOs, validações e tratamento de exceções;
-5. configurar persistência e banco de dados;
-6. migrar regras de negócio;
-7. implementar testes com `@QuarkusTest` e REST Assured;
-8. adicionar documentação OpenAPI;
-9. evoluir autenticação/autorização, paginação e migrações de banco;
-10. preparar configuração e deploy de produção.
-
-## Objetivo de aprendizado
-
-O projeto busca consolidar conhecimentos em Java 17, Quarkus, Jakarta REST, CDI, Maven, APIs REST, persistência, validação, clean code, testes automatizados e design de aplicações backend.
-
-## Licença
-
-Projeto de estudo e prática pessoal. A licença poderá ser definida posteriormente.
+Autenticação/autorização, paginação, histórico de cargos, migrações Flyway/Liquibase, banco persistente, configuração de produção e deploy não estão implementados.
